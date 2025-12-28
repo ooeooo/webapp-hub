@@ -53,10 +53,6 @@
       "hardenedRuntime": true
     }
   },
-  "plugins": {
-    "global-shortcut": {
-      "all": true
-    }
-  }
+  "plugins": {}
 }
 
