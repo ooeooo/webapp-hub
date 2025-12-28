@@ -10,6 +10,12 @@ export interface WebApp {
   useProxy: boolean;
   order: number;
   createdAt: number;
+  /** 自定义注入脚本 */
+  injectScript?: string;
+  /** 是否在页面加载时注入 */
+  injectOnLoad: boolean;
+  /** 是否在快捷键显示时注入 */
+  injectOnShortcut: boolean;
 }
 
 // HTTP代理配置
@@ -51,6 +57,9 @@ export interface CreateWebAppInput {
   width?: number;
   height?: number;
   useProxy?: boolean;
+  injectScript?: string;
+  injectOnLoad?: boolean;
+  injectOnShortcut?: boolean;
 }
 
 // 更新小程序的输入
@@ -64,6 +73,9 @@ export interface UpdateWebAppInput {
   height?: number;
   useProxy?: boolean;
   order?: number;
+  injectScript?: string;
+  injectOnLoad?: boolean;
+  injectOnShortcut?: boolean;
 }
 
 // 代理配置输入
@@ -116,6 +128,8 @@ export function createDefaultWebApp(name: string, url: string): WebApp {
     useProxy: true,
     order: 0,
     createdAt: Date.now(),
+    injectOnLoad: false,
+    injectOnShortcut: false,
   };
 }
 

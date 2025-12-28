@@ -82,6 +82,9 @@ pub async fn add_webapp(
     shortcut: Option<String>,
     width: Option<u32>,
     height: Option<u32>,
+    inject_script: Option<String>,
+    inject_on_load: Option<bool>,
+    inject_on_shortcut: Option<bool>,
 ) -> Result<WebApp, String> {
     let mut config = read_config(&app);
 
@@ -92,6 +95,9 @@ pub async fn add_webapp(
     webapp.width = width.unwrap_or(1024);
     webapp.height = height.unwrap_or(768);
     webapp.order = config.webapps.len() as u32;
+    webapp.inject_script = inject_script;
+    webapp.inject_on_load = inject_on_load.unwrap_or(false);
+    webapp.inject_on_shortcut = inject_on_shortcut.unwrap_or(false);
 
     // 添加到配置
     config.webapps.push(webapp.clone());
@@ -123,6 +129,9 @@ pub async fn update_webapp(
     height: Option<u32>,
     use_proxy: Option<bool>,
     order: Option<u32>,
+    inject_script: Option<String>,
+    inject_on_load: Option<bool>,
+    inject_on_shortcut: Option<bool>,
 ) -> Result<WebApp, String> {
     let mut config = read_config(&app);
 
@@ -158,6 +167,15 @@ pub async fn update_webapp(
     }
     if let Some(o) = order {
         webapp.order = o;
+    }
+    if let Some(script) = inject_script {
+        webapp.inject_script = if script.is_empty() { None } else { Some(script) };
+    }
+    if let Some(on_load) = inject_on_load {
+        webapp.inject_on_load = on_load;
+    }
+    if let Some(on_shortcut) = inject_on_shortcut {
+        webapp.inject_on_shortcut = on_shortcut;
     }
 
     let updated_webapp = webapp.clone();

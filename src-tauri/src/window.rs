@@ -1,7 +1,7 @@
 use lru::LruCache;
 use parking_lot::Mutex;
 use std::num::NonZeroUsize;
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, Listener};
 
 use crate::models::WebApp;
 
@@ -85,7 +85,33 @@ impl WindowManager {
             log::info!("Setting proxy for webapp {}: {}", webapp.id, proxy);
         }
 
-        let _window = builder.build().map_err(|e| e.to_string())?;
+        let window = builder.build().map_err(|e| e.to_string())?;
+
+        // 如果需要在页面加载时注入脚本
+        if webapp.inject_on_load {
+            if let Some(script) = &webapp.inject_script {
+                let script = script.clone();
+                window.listen("tauri://webview-created", move |_event| {
+                    // 脚本将在 webview 创建后注入
+                    log::info!("Webview created, script will be injected on load");
+                });
+                
+                // 使用 on_page_load 在页面加载完成后注入脚本
+                let script_clone = script.clone();
+                let window_clone = window.clone();
+                window.once("tauri://created", move |_| {
+                    // 延迟注入以确保页面已加载
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                        if let Err(e) = window_clone.eval(&script_clone) {
+                            log::error!("Failed to inject script on load: {}", e);
+                        } else {
+                            log::info!("Script injected on page load");
+                        }
+                    });
+                });
+            }
+        }
 
         // 添加到活跃窗口缓存
         let mut cache = self.active_windows.lock();
@@ -117,21 +143,48 @@ impl WindowManager {
     }
 
     /// 切换窗口可见性
-    pub fn toggle_webapp(&self, app: &AppHandle, webapp: &WebApp) -> Result<(), String> {
+    /// 返回值: Ok(true) 表示显示窗口（可能需要注入脚本），Ok(false) 表示隐藏窗口
+    pub fn toggle_webapp(&self, app: &AppHandle, webapp: &WebApp, proxy_url: Option<String>) -> Result<bool, String> {
         let window_label = format!("webapp-{}", webapp.id);
 
         if let Some(window) = app.get_webview_window(&window_label) {
-            if window.is_visible().unwrap_or(false) {
+            let is_visible = window.is_visible().unwrap_or(false);
+            let is_focused = window.is_focused().unwrap_or(false);
+
+            if is_visible && is_focused {
+                // 情况1: 窗口可见且有焦点 → 隐藏窗口
                 window.hide().map_err(|e| e.to_string())?;
+                log::info!("Hidden webapp window: {} (visible && focused)", webapp.id);
+                Ok(false) // 返回 false 表示隐藏
             } else {
+                // 情况2: 窗口不可见或无焦点 → 显示窗口并置焦点
                 window.show().map_err(|e| e.to_string())?;
                 window.set_focus().map_err(|e| e.to_string())?;
+                
+                // 更新 LRU 缓存顺序
+                let mut cache = self.active_windows.lock();
+                cache.get(&webapp.id);
+                
+                log::info!("Shown webapp window: {} (not visible or not focused)", webapp.id);
+                Ok(true) // 返回 true 表示显示（可能需要注入脚本）
             }
-            Ok(())
         } else {
-            // 窗口不存在，打开它
-            self.open_webapp(app, webapp, None)
+            // 窗口不存在，创建新窗口
+            self.open_webapp(app, webapp, proxy_url)?;
+            Ok(true) // 新窗口创建，返回 true
         }
+    }
+
+    /// 注入 JavaScript 脚本到指定的小程序窗口
+    pub fn inject_script(&self, app: &AppHandle, webapp_id: &str, script: &str) -> Result<(), String> {
+        let window_label = format!("webapp-{}", webapp_id);
+        if let Some(window) = app.get_webview_window(&window_label) {
+            window.eval(script).map_err(|e| e.to_string())?;
+            log::info!("Injected script to webapp: {}", webapp_id);
+        } else {
+            log::warn!("Window not found for script injection: {}", webapp_id);
+        }
+        Ok(())
     }
 
     /// 强制执行窗口数量限制

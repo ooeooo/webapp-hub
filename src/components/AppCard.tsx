@@ -5,7 +5,7 @@ import { Dialog, DialogContent } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useShortcutRecorder } from '@/hooks/useTauri';
-import { ExternalLink, Edit2, Trash2, Keyboard, Globe } from 'lucide-react';
+import { ExternalLink, Edit2, Trash2, Keyboard, Globe, Code, ChevronDown, ChevronRight } from 'lucide-react';
 import type { WebApp } from '@/types';
 
 interface AppCardProps {
@@ -145,6 +145,12 @@ function EditWebAppDialog({ webapp, open, onOpenChange }: EditWebAppDialogProps)
   const [height, setHeight] = useState(webapp.height.toString());
   const { isRecording, shortcut, startRecording, setShortcut } = useShortcutRecorder();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // 脚本注入相关状态
+  const [showScriptSection, setShowScriptSection] = useState(!!webapp.injectScript);
+  const [injectScript, setInjectScript] = useState(webapp.injectScript || '');
+  const [injectOnLoad, setInjectOnLoad] = useState(webapp.injectOnLoad);
+  const [injectOnShortcut, setInjectOnShortcut] = useState(webapp.injectOnShortcut);
 
   // Initialize shortcut from webapp
   useState(() => {
@@ -165,6 +171,9 @@ function EditWebAppDialog({ webapp, open, onOpenChange }: EditWebAppDialogProps)
         shortcut: shortcut || undefined,
         width: parseInt(width) || 1024,
         height: parseInt(height) || 768,
+        injectScript: injectScript || undefined,
+        injectOnLoad,
+        injectOnShortcut,
       });
       onOpenChange(false);
     } catch (err) {
@@ -177,7 +186,7 @@ function EditWebAppDialog({ webapp, open, onOpenChange }: EditWebAppDialogProps)
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent title="编辑小程序">
-        <form onSubmit={handleSubmit} className="space-y-4 mt-4">
+        <form onSubmit={handleSubmit} className="space-y-4 mt-4 max-h-[70vh] overflow-y-auto pr-2">
           <Input
             label="名称"
             value={name}
@@ -228,6 +237,86 @@ function EditWebAppDialog({ webapp, open, onOpenChange }: EditWebAppDialogProps)
               </Button>
             </div>
           </div>
+          
+          {/* 脚本注入设置 */}
+          <div className="border border-hub-border rounded-lg overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowScriptSection(!showScriptSection)}
+              className="w-full flex items-center gap-2 p-3 bg-hub-bg hover:bg-hub-card-hover transition-colors text-left"
+            >
+              {showScriptSection ? (
+                <ChevronDown className="w-4 h-4 text-hub-text-muted" />
+              ) : (
+                <ChevronRight className="w-4 h-4 text-hub-text-muted" />
+              )}
+              <Code className="w-4 h-4 text-hub-accent" />
+              <span className="text-sm font-medium text-hub-text">脚本注入</span>
+              {injectScript && (
+                <span className="ml-auto text-xs text-hub-accent bg-hub-accent/10 px-2 py-0.5 rounded">
+                  已配置
+                </span>
+              )}
+            </button>
+            
+            {showScriptSection && (
+              <div className="p-4 space-y-4 border-t border-hub-border">
+                <div>
+                  <label className="block text-sm font-medium text-hub-text mb-1.5">
+                    JavaScript 脚本
+                  </label>
+                  <textarea
+                    value={injectScript}
+                    onChange={(e) => setInjectScript(e.target.value)}
+                    placeholder={`// 在此输入要注入的 JavaScript 代码\n// 例如：\nconsole.log('脚本已注入');`}
+                    className={cn(
+                      'w-full h-32 px-3 py-2 rounded-lg text-sm font-mono',
+                      'bg-hub-bg border border-hub-border',
+                      'text-hub-text placeholder:text-hub-text-muted',
+                      'focus:outline-none focus:ring-2 focus:ring-hub-accent focus:border-transparent',
+                      'resize-y'
+                    )}
+                  />
+                  <p className="text-xs text-hub-text-muted mt-1">
+                    类似油猴脚本，可以修改网页行为
+                  </p>
+                </div>
+                
+                <div className="space-y-3">
+                  <label className="block text-sm font-medium text-hub-text">
+                    注入时机
+                  </label>
+                  
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={injectOnLoad}
+                      onChange={(e) => setInjectOnLoad(e.target.checked)}
+                      className="w-4 h-4 rounded border-hub-border text-hub-accent focus:ring-hub-accent"
+                    />
+                    <div>
+                      <span className="text-sm text-hub-text">网页加载时</span>
+                      <p className="text-xs text-hub-text-muted">首次打开网页时自动注入脚本</p>
+                    </div>
+                  </label>
+                  
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={injectOnShortcut}
+                      onChange={(e) => setInjectOnShortcut(e.target.checked)}
+                      className="w-4 h-4 rounded border-hub-border text-hub-accent focus:ring-hub-accent"
+                    />
+                    <div>
+                      <span className="text-sm text-hub-text">快捷键触发时</span>
+                      <p className="text-xs text-hub-text-muted">每次通过快捷键显示窗口时注入脚本</p>
+                    </div>
+                  </label>
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className="flex justify-end gap-3 pt-4">
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               取消

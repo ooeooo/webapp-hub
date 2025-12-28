@@ -108,6 +108,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         shortcut: input.shortcut,
         width: input.width,
         height: input.height,
+        injectScript: input.injectScript,
+        injectOnLoad: input.injectOnLoad,
+        injectOnShortcut: input.injectOnShortcut,
       });
 
       set((state) => ({
@@ -148,6 +151,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         height: input.height,
         useProxy: input.useProxy,
         order: input.order,
+        injectScript: input.injectScript,
+        injectOnLoad: input.injectOnLoad,
+        injectOnShortcut: input.injectOnShortcut,
       });
 
       set((state) => ({

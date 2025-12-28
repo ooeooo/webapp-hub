@@ -31,6 +31,15 @@ pub struct WebApp {
     /// 创建时间戳
     #[serde(default)]
     pub created_at: u64,
+    /// 自定义注入脚本
+    #[serde(default)]
+    pub inject_script: Option<String>,
+    /// 是否在页面加载时注入
+    #[serde(default)]
+    pub inject_on_load: bool,
+    /// 是否在快捷键显示时注入
+    #[serde(default)]
+    pub inject_on_shortcut: bool,
 }
 
 fn default_width() -> u32 {
@@ -61,6 +70,9 @@ impl WebApp {
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs(),
+            inject_script: None,
+            inject_on_load: false,
+            inject_on_shortcut: false,
         }
     }
 }

@@ -127,9 +127,14 @@ fn handle_shortcut_trigger(app: &AppHandle, webapp_id: &str) {
     // 处理主窗口快捷键
     if webapp_id == "__main__" {
         if let Some(window) = app.get_webview_window("main") {
-            if window.is_visible().unwrap_or(false) {
+            let is_visible = window.is_visible().unwrap_or(false);
+            let is_focused = window.is_focused().unwrap_or(false);
+            
+            if is_visible && is_focused {
+                // 窗口可见且有焦点 → 隐藏
                 let _ = window.hide();
             } else {
+                // 窗口不可见或无焦点 → 显示并置焦点
                 let _ = window.show();
                 let _ = window.set_focus();
             }
@@ -148,14 +153,26 @@ fn handle_shortcut_trigger(app: &AppHandle, webapp_id: &str) {
         if let Ok(config) = serde_json::from_str::<AppConfig>(&content) {
             if let Some(webapp) = config.webapps.iter().find(|w| w.id == webapp_id) {
                 if let Some(window_manager) = app.try_state::<WindowManager>() {
-                    let _proxy_url = if webapp.use_proxy && config.proxy.enabled {
+                    let proxy_url = if webapp.use_proxy && config.proxy.enabled {
                         config.proxy.get_proxy_url()
                     } else {
                         None
                     };
 
-                    if let Err(e) = window_manager.toggle_webapp(app, webapp) {
-                        log::error!("Failed to toggle webapp: {}", e);
+                    match window_manager.toggle_webapp(app, webapp, proxy_url) {
+                        Ok(should_show) => {
+                            // 仅当显示窗口时才可能注入脚本
+                            if should_show && webapp.inject_on_shortcut {
+                                if let Some(script) = &webapp.inject_script {
+                                    if let Err(e) = window_manager.inject_script(app, &webapp.id, script) {
+                                        log::error!("Failed to inject script on shortcut: {}", e);
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("Failed to toggle webapp: {}", e);
+                        }
                     }
                 }
             }
