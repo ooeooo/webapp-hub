@@ -1,4 +1,4 @@
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Manager, State, WebviewUrl};
 
 use crate::config::ConfigManager;
 use crate::models::{AppConfig, ProxyConfig, WebApp};
@@ -305,5 +305,110 @@ pub async fn unregister_shortcut(app: AppHandle, shortcut: String) -> Result<(),
         .ok_or("快捷键管理器未初始化")?;
 
     manager.unregister(&app, &shortcut)
+}
+
+/// 打开小程序窗口（新窗口模式）
+#[tauri::command]
+pub async fn open_webapp_window(
+    app: AppHandle,
+    config_manager: State<'_, ConfigManager>,
+    webapp_id: String,
+) -> Result<(), String> {
+    let config = config_manager.read();
+    let webapp = config
+        .webapps
+        .iter()
+        .find(|w| w.id == webapp_id)
+        .ok_or("小程序不存在")?;
+
+    let window_label = format!("webapp-{}", webapp_id);
+
+    // 检查窗口是否已存在
+    if let Some(window) = app.get_webview_window(&window_label) {
+        // 窗口已存在，显示并聚焦
+        let _ = window.show();
+        let _ = window.set_focus();
+        return Ok(());
+    }
+
+    // 创建新窗口
+    let url = webapp.url.parse::<url::Url>().map_err(|e| e.to_string())?;
+    
+    let _window = tauri::WebviewWindowBuilder::new(
+        &app,
+        &window_label,
+        WebviewUrl::External(url),
+    )
+    .title(&webapp.name)
+    .inner_size(webapp.width as f64, webapp.height as f64)
+    .resizable(true)
+    .center()
+    .build()
+    .map_err(|e| e.to_string())?;
+
+    log::info!("Opened webapp window: {}", webapp_id);
+    Ok(())
+}
+
+/// 关闭小程序窗口
+#[tauri::command]
+pub async fn close_webapp_window(app: AppHandle, webapp_id: String) -> Result<(), String> {
+    let window_label = format!("webapp-{}", webapp_id);
+
+    if let Some(window) = app.get_webview_window(&window_label) {
+        window.close().map_err(|e| e.to_string())?;
+        log::info!("Closed webapp window: {}", webapp_id);
+    }
+
+    Ok(())
+}
+
+/// 切换小程序窗口（显示/隐藏）
+#[tauri::command]
+pub async fn toggle_webapp_window(
+    app: AppHandle,
+    config_manager: State<'_, ConfigManager>,
+    webapp_id: String,
+) -> Result<bool, String> {
+    let window_label = format!("webapp-{}", webapp_id);
+
+    if let Some(window) = app.get_webview_window(&window_label) {
+        let is_visible = window.is_visible().unwrap_or(false);
+        let is_focused = window.is_focused().unwrap_or(false);
+
+        if is_visible && is_focused {
+            window.hide().map_err(|e| e.to_string())?;
+            return Ok(false);
+        } else {
+            window.show().map_err(|e| e.to_string())?;
+            window.set_focus().map_err(|e| e.to_string())?;
+            return Ok(true);
+        }
+    }
+
+    // 窗口不存在，创建新窗口
+    let config = config_manager.read();
+    let webapp = config
+        .webapps
+        .iter()
+        .find(|w| w.id == webapp_id)
+        .ok_or("小程序不存在")?;
+
+    let url = webapp.url.parse::<url::Url>().map_err(|e| e.to_string())?;
+    
+    let _window = tauri::WebviewWindowBuilder::new(
+        &app,
+        &window_label,
+        WebviewUrl::External(url),
+    )
+    .title(&webapp.name)
+    .inner_size(webapp.width as f64, webapp.height as f64)
+    .resizable(true)
+    .center()
+    .build()
+    .map_err(|e| e.to_string())?;
+
+    log::info!("Created webapp window: {}", webapp_id);
+    Ok(true)
 }
 

@@ -101,6 +101,9 @@ pub fn run() {
             commands::set_proxy_config,
             commands::register_shortcut,
             commands::unregister_shortcut,
+            commands::open_webapp_window,
+            commands::close_webapp_window,
+            commands::toggle_webapp_window,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

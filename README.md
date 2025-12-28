@@ -1,39 +1,162 @@
 # WebApp Hub
 
-轻量级跨平台网页小程序容器应用。将任意网页嵌入为独立窗口运行的桌面小程序。
+轻量级跨平台网页小程序容器应用。将任意网页转换为独立窗口运行的桌面小程序。
 
-## 功能特性
+## ✨ 功能特性
 
-- 🚀 **轻量级** - 基于 Tauri 2，使用系统 WebView，资源占用低
+- 🚀 **轻量级** - 基于 Tauri 2，使用系统原生 WebView，资源占用极低
 - 🌍 **跨平台** - 支持 Windows、macOS、Linux
-- 🔗 **网页转小程序** - 将任意网址转换为独立桌面应用
-- ⌨️ **全局快捷键** - 为每个小程序绑定快捷键，快速呼出
-- 🌐 **代理支持** - 支持 HTTP/HTTPS/SOCKS5 代理
+- 🔗 **网页转小程序** - 将任意网址转换为独立桌面应用窗口
+- ⌨️ **全局快捷键** - 为每个小程序绑定快捷键，一键呼出/隐藏
+- 🌐 **代理支持** - 支持 HTTP/HTTPS/SOCKS5 代理配置
 - 📊 **智能窗口管理** - LRU 策略自动管理活跃窗口数量
+- 💉 **脚本注入** - 类似油猴脚本，可注入自定义 JavaScript 修改网页行为
 
-## 技术栈
+## 📸 界面预览
+
+应用采用现代化深色主题设计：
+- **左侧边栏**: 快速切换已添加的小程序
+- **主界面**: 管理小程序列表，支持网格/列表视图
+- **独立窗口**: 每个小程序在独立窗口中运行，支持完整网页功能
+
+## 🛠️ 技术栈
 
 - **后端**: Tauri 2 + Rust
 - **前端**: React 18 + TypeScript + Vite
 - **UI**: Tailwind CSS + Radix UI
 - **状态管理**: Zustand
 
-## 开发
+## 📦 安装
 
-### 环境要求
+### 从 Release 下载
+
+前往 [Releases](https://github.com/ooeooo/webapp-hub/releases) 页面下载对应平台的安装包：
+- **macOS**: `.dmg` 文件
+- **Windows**: `.msi` 或 `.exe` 安装包
+- **Linux**: `.deb` 或 `.rpm` 包
+
+### 从源码构建
+
+#### 环境要求
 
 - Node.js >= 18
 - Rust >= 1.70
-- 系统依赖 (参考 [Tauri Prerequisites](https://v2.tauri.app/start/prerequisites/))
+- 系统依赖参考 [Tauri Prerequisites](https://v2.tauri.app/start/prerequisites/)
 
-### 安装依赖
+#### 构建步骤
 
 ```bash
+# 克隆仓库
+git clone https://github.com/ooeooo/webapp-hub.git
+cd webapp-hub
+
 # 安装前端依赖
 npm install
 
-# Rust 依赖会在首次构建时自动安装
+# 开发模式运行
+npm run tauri dev
+
+# 构建生产版本
+npm run tauri build
 ```
+
+## 📖 使用说明
+
+### 添加小程序
+
+1. 点击主界面的 **"添加"** 按钮
+2. 输入小程序名称和网址
+3. (可选) 设置窗口尺寸
+4. (可选) 录制全局快捷键
+5. (可选) 配置脚本注入
+6. 点击 **"添加"** 完成
+
+### 打开小程序
+
+- **方式一**: 点击左侧边栏的小程序图标
+- **方式二**: 在管理界面点击小程序卡片
+- **方式三**: 使用设置的全局快捷键
+
+### 配置快捷键
+
+1. 编辑小程序设置
+2. 点击"录制"按钮
+3. 按下想要的快捷键组合
+4. 保存设置
+
+快捷键行为：
+- 窗口不可见 → 显示并聚焦
+- 窗口可见但无焦点 → 聚焦
+- 窗口可见且有焦点 → 隐藏
+
+快捷键格式示例: `CommandOrControl+Shift+1`
+
+### 脚本注入
+
+类似油猴脚本，可以为每个小程序注入自定义 JavaScript 代码：
+
+1. 编辑小程序，展开"脚本注入"部分
+2. 输入 JavaScript 代码
+3. 选择注入时机：
+   - **网页加载时**: 首次打开时自动注入
+   - **快捷键触发时**: 每次通过快捷键显示窗口时注入
+4. 保存设置
+
+### 配置代理
+
+1. 进入 **设置** → **代理设置**
+2. 启用代理
+3. 选择代理类型 (HTTP/HTTPS/SOCKS5)
+4. 填写代理服务器地址和端口
+5. (可选) 填写认证信息
+6. 保存设置
+
+小程序可单独设置是否使用代理。
+
+## 📁 项目结构
+
+```
+webapp-hub/
+├── src/                      # React 前端
+│   ├── components/           # UI 组件
+│   │   ├── layout/           # 布局组件
+│   │   ├── ui/               # 基础 UI 组件
+│   │   ├── AppManager.tsx    # 小程序管理
+│   │   ├── WebAppView.tsx    # 小程序视图
+│   │   └── Settings.tsx      # 设置页面
+│   ├── stores/               # Zustand 状态管理
+│   ├── hooks/                # 自定义 Hooks
+│   ├── types/                # TypeScript 类型定义
+│   └── lib/                  # 工具函数
+├── src-tauri/                # Rust 后端
+│   ├── src/
+│   │   ├── main.rs           # 应用入口
+│   │   ├── lib.rs            # 库入口
+│   │   ├── commands.rs       # Tauri 命令
+│   │   ├── config.rs         # 配置管理
+│   │   ├── window.rs         # 窗口管理
+│   │   ├── proxy.rs          # 代理处理
+│   │   ├── shortcuts.rs      # 快捷键管理
+│   │   └── models.rs         # 数据模型
+│   ├── capabilities/         # Tauri 权限配置
+│   └── tauri.conf.json       # Tauri 配置
+└── package.json
+```
+
+## ⚠️ 注意事项
+
+### macOS 快捷键权限
+
+在 macOS 上使用全局快捷键需要授予"辅助功能"权限：
+1. 打开 **系统偏好设置** → **安全性与隐私** → **隐私**
+2. 选择 **辅助功能**
+3. 添加并启用 WebApp Hub
+
+### 代理认证
+
+如果代理需要认证，用户名和密码中的特殊字符会自动进行 URL 编码处理。
+
+## 🔧 开发
 
 ### 开发模式
 
@@ -41,54 +164,28 @@ npm install
 npm run tauri dev
 ```
 
-### 构建生产版本
+### 检查代码
+
+```bash
+# 前端类型检查
+npm run build
+
+# Rust 检查
+cd src-tauri && cargo check
+```
+
+### 构建发布版本
 
 ```bash
 npm run tauri build
 ```
 
-## 项目结构
+构建产物位于 `src-tauri/target/release/bundle/`
 
-```
-webapp-hub/
-├── src/                      # React 前端
-│   ├── components/           # UI 组件
-│   ├── stores/               # Zustand 状态
-│   ├── hooks/                # 自定义 Hooks
-│   ├── types/                # TypeScript 类型
-│   └── lib/                  # 工具函数
-├── src-tauri/                # Rust 后端
-│   ├── src/
-│   │   ├── main.rs           # 入口
-│   │   ├── commands.rs       # Tauri 命令
-│   │   ├── window.rs         # 窗口管理
-│   │   ├── proxy.rs          # 代理处理
-│   │   └── shortcuts.rs      # 快捷键管理
-│   └── tauri.conf.json       # Tauri 配置
-└── package.json
-```
-
-## 使用说明
-
-### 添加小程序
-
-1. 点击主界面右上角的"添加"按钮
-2. 输入小程序名称和网址
-3. (可选) 录制快捷键
-4. 点击"添加"完成
-
-### 配置代理
-
-1. 进入设置 -> 代理设置
-2. 启用代理并填写代理服务器信息
-3. 保存设置
-
-### 使用快捷键
-
-- 为小程序设置快捷键后，可在任何地方通过快捷键快速呼出/隐藏小程序窗口
-- 快捷键格式示例: `CommandOrControl+Shift+G`
-
-## License
+## 📄 License
 
 MIT
 
+## 🤝 贡献
+
+欢迎提交 Issue 和 Pull Request！

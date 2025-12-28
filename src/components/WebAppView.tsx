@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { cn } from '@/lib/utils';
-import { ArrowLeft, ArrowRight, RotateCw, ExternalLink, Home, Lock, Unlock } from 'lucide-react';
+import { ExternalLink, Loader2, Monitor } from 'lucide-react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import type { WebApp } from '@/types';
 
@@ -9,224 +10,100 @@ interface WebAppViewProps {
 }
 
 export function WebAppView({ webapp }: WebAppViewProps) {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [currentUrl, setCurrentUrl] = useState(webapp.url);
-  const [canGoBack, setCanGoBack] = useState(false);
-  const [canGoForward, setCanGoForward] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [isOpening, setIsOpening] = useState(false);
+  const [hasOpened, setHasOpened] = useState(false);
 
-  // Reset state when webapp changes
   useEffect(() => {
-    setCurrentUrl(webapp.url);
-    setCanGoBack(false);
-    setCanGoForward(false);
-    setIsLoading(true);
-    setError(null);
-  }, [webapp.id, webapp.url]);
+    // 当选择新的 webapp 时，自动打开窗口
+    openWebAppWindow();
+  }, [webapp.id]);
 
-  const handleGoBack = () => {
+  const openWebAppWindow = async () => {
+    setIsOpening(true);
     try {
-      iframeRef.current?.contentWindow?.history.back();
-    } catch {
-      // Cross-origin restriction
-    }
-  };
-
-  const handleGoForward = () => {
-    try {
-      iframeRef.current?.contentWindow?.history.forward();
-    } catch {
-      // Cross-origin restriction
-    }
-  };
-
-  const handleReload = () => {
-    setIsLoading(true);
-    if (iframeRef.current) {
-      iframeRef.current.src = currentUrl;
-    }
-  };
-
-  const handleHome = () => {
-    setCurrentUrl(webapp.url);
-    setIsLoading(true);
-    if (iframeRef.current) {
-      iframeRef.current.src = webapp.url;
+      await invoke('open_webapp_window', { webappId: webapp.id });
+      setHasOpened(true);
+    } catch (err) {
+      console.error('Failed to open webapp window:', err);
+    } finally {
+      setIsOpening(false);
     }
   };
 
   const handleOpenInBrowser = async () => {
     try {
-      await openUrl(currentUrl);
+      await openUrl(webapp.url);
     } catch (err) {
       console.error('Failed to open in browser:', err);
     }
   };
 
-  const handleIframeLoad = () => {
-    setIsLoading(false);
-    setError(null);
-    
-    try {
-      // Try to access iframe content (may fail due to CORS)
-      const iframe = iframeRef.current;
-      if (iframe?.contentWindow) {
-        setCanGoBack(iframe.contentWindow.history.length > 1);
-      }
-    } catch {
-      // Cross-origin - can't access history
-    }
-  };
-
-  const handleIframeError = () => {
-    setIsLoading(false);
-    setError('无法加载此页面。可能是跨域限制或网络问题。');
-  };
-
-  // Check if the URL is likely to work in iframe
-  const isEmbeddable = !webapp.url.includes('google.com') && 
-                       !webapp.url.includes('github.com') &&
-                       !webapp.url.includes('twitter.com') &&
-                       !webapp.url.includes('facebook.com');
-
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden">
-      {/* Navigation Bar */}
-      <div className="flex-shrink-0 h-12 bg-hub-card border-b border-hub-border flex items-center px-3 gap-1">
-        {/* Navigation Buttons */}
-        <button
-          onClick={handleGoBack}
-          disabled={!canGoBack}
-          className={cn(
-            'w-8 h-8 rounded-lg flex items-center justify-center transition-colors',
-            canGoBack
-              ? 'text-hub-text hover:bg-hub-card-hover'
-              : 'text-hub-text-muted/50 cursor-not-allowed'
-          )}
-          title="后退"
-        >
-          <ArrowLeft className="w-4 h-4" />
-        </button>
-        
-        <button
-          onClick={handleGoForward}
-          disabled={!canGoForward}
-          className={cn(
-            'w-8 h-8 rounded-lg flex items-center justify-center transition-colors',
-            canGoForward
-              ? 'text-hub-text hover:bg-hub-card-hover'
-              : 'text-hub-text-muted/50 cursor-not-allowed'
-          )}
-          title="前进"
-        >
-          <ArrowRight className="w-4 h-4" />
-        </button>
-
-        <button
-          onClick={handleReload}
-          className={cn(
-            'w-8 h-8 rounded-lg flex items-center justify-center transition-colors',
-            'text-hub-text hover:bg-hub-card-hover',
-            isLoading && 'animate-spin'
-          )}
-          title="刷新"
-        >
-          <RotateCw className="w-4 h-4" />
-        </button>
-
-        <button
-          onClick={handleHome}
-          className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors text-hub-text hover:bg-hub-card-hover"
-          title="首页"
-        >
-          <Home className="w-4 h-4" />
-        </button>
-
-        {/* URL Bar */}
-        <div className="flex-1 mx-2 flex items-center gap-2 px-3 py-1.5 bg-hub-bg rounded-lg border border-hub-border">
-          {currentUrl.startsWith('https') ? (
-            <Lock className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
+    <div className="flex-1 flex flex-col items-center justify-center bg-hub-bg p-8">
+      <div className="max-w-md text-center">
+        {/* App Icon */}
+        <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-hub-accent/20 to-hub-accent/5 flex items-center justify-center mx-auto mb-6">
+          {webapp.icon ? (
+            <img
+              src={webapp.icon}
+              alt={webapp.name}
+              className="w-12 h-12 rounded-lg object-contain"
+            />
           ) : (
-            <Unlock className="w-3.5 h-3.5 text-hub-text-muted flex-shrink-0" />
+            <Monitor className="w-10 h-10 text-hub-accent" />
           )}
-          <span className="text-sm text-hub-text truncate">{currentUrl}</span>
         </div>
 
-        {/* Open in Browser */}
-        <button
-          onClick={handleOpenInBrowser}
-          className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors text-hub-text hover:bg-hub-card-hover hover:text-hub-accent"
-          title="在浏览器中打开"
-        >
-          <ExternalLink className="w-4 h-4" />
-        </button>
-      </div>
+        {/* App Name */}
+        <h2 className="text-2xl font-semibold text-hub-text mb-2">{webapp.name}</h2>
+        <p className="text-sm text-hub-text-muted mb-6 truncate">{webapp.url}</p>
 
-      {/* WebApp Content */}
-      <div className="flex-1 relative bg-white">
-        {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-hub-bg z-10">
-            <div className="flex flex-col items-center gap-3">
-              <RotateCw className="w-8 h-8 text-hub-accent animate-spin" />
-              <span className="text-sm text-hub-text-muted">加载中...</span>
-            </div>
+        {/* Status */}
+        {isOpening ? (
+          <div className="flex items-center justify-center gap-2 text-hub-text-muted mb-6">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            <span>正在打开窗口...</span>
           </div>
-        )}
-
-        {error && (
-          <div className="absolute inset-0 flex items-center justify-center bg-hub-bg z-10">
-            <div className="flex flex-col items-center gap-4 text-center px-8">
-              <div className="w-16 h-16 rounded-full bg-hub-danger/20 flex items-center justify-center">
-                <ExternalLink className="w-8 h-8 text-hub-danger" />
-              </div>
-              <div>
-                <h3 className="text-lg font-medium text-hub-text mb-2">无法嵌入此网页</h3>
-                <p className="text-sm text-hub-text-muted mb-4">{error}</p>
-                <button
-                  onClick={handleOpenInBrowser}
-                  className="px-4 py-2 bg-hub-accent hover:bg-hub-accent-hover text-white rounded-lg transition-colors inline-flex items-center gap-2"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                  在浏览器中打开
-                </button>
-              </div>
-            </div>
+        ) : hasOpened ? (
+          <div className="flex items-center justify-center gap-2 text-green-500 mb-6">
+            <Monitor className="w-5 h-5" />
+            <span>窗口已打开</span>
           </div>
-        )}
+        ) : null}
 
-        {!isEmbeddable && !error && (
-          <div className="absolute inset-0 flex items-center justify-center bg-hub-bg z-10">
-            <div className="flex flex-col items-center gap-4 text-center px-8">
-              <div className="w-16 h-16 rounded-full bg-hub-warning/20 flex items-center justify-center">
-                <Lock className="w-8 h-8 text-hub-warning" />
-              </div>
-              <div>
-                <h3 className="text-lg font-medium text-hub-text mb-2">此网站不支持嵌入</h3>
-                <p className="text-sm text-hub-text-muted mb-4">
-                  该网站设置了安全策略，无法在应用内显示。
-                </p>
-                <button
-                  onClick={handleOpenInBrowser}
-                  className="px-4 py-2 bg-hub-accent hover:bg-hub-accent-hover text-white rounded-lg transition-colors inline-flex items-center gap-2"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                  在浏览器中打开
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Actions */}
+        <div className="flex flex-col gap-3">
+          <button
+            onClick={openWebAppWindow}
+            disabled={isOpening}
+            className={cn(
+              'w-full px-6 py-3 rounded-xl font-medium transition-all',
+              'bg-hub-accent hover:bg-hub-accent-hover text-white',
+              'flex items-center justify-center gap-2',
+              isOpening && 'opacity-50 cursor-not-allowed'
+            )}
+          >
+            <Monitor className="w-5 h-5" />
+            {hasOpened ? '重新打开窗口' : '打开窗口'}
+          </button>
 
-        <iframe
-          ref={iframeRef}
-          src={currentUrl}
-          className="w-full h-full border-0"
-          sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals"
-          onLoad={handleIframeLoad}
-          onError={handleIframeError}
-          title={webapp.name}
-        />
+          <button
+            onClick={handleOpenInBrowser}
+            className={cn(
+              'w-full px-6 py-3 rounded-xl font-medium transition-all',
+              'bg-hub-card hover:bg-hub-card-hover text-hub-text border border-hub-border',
+              'flex items-center justify-center gap-2'
+            )}
+          >
+            <ExternalLink className="w-5 h-5" />
+            在浏览器中打开
+          </button>
+        </div>
+
+        {/* Hint */}
+        <p className="mt-6 text-xs text-hub-text-muted">
+          小程序将在独立窗口中打开，支持完整的网页功能
+        </p>
       </div>
     </div>
   );

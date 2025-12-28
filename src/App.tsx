@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import { listen } from '@tauri-apps/api/event';
 import { Toaster } from '@/components/ui/Toaster';
 import { AppSidebar } from '@/components/layout/AppSidebar';
 import { WebAppView } from '@/components/WebAppView';
@@ -28,17 +27,6 @@ function App() {
   useEffect(() => {
     loadConfig();
   }, [loadConfig]);
-
-  // 监听快捷键切换小程序事件
-  useEffect(() => {
-    const unlisten = listen<string>('switch-webapp', (event) => {
-      handleSelectWebApp(event.payload);
-    });
-
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  }, [handleSelectWebApp]);
 
   const handleNavigate = (view: ViewType) => {
     if (view === 'webapp' && appState.activeWebAppId) {
