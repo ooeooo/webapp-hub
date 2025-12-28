@@ -1,8 +1,10 @@
+use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// 网页小程序配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WebApp {
     /// 唯一标识符
     pub id: String,
@@ -79,6 +81,7 @@ impl WebApp {
 
 /// HTTP代理配置
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct ProxyConfig {
     /// 是否启用代理
     #[serde(default)]
@@ -106,14 +109,22 @@ fn default_proxy_type() -> String {
 
 impl ProxyConfig {
     /// 获取代理URL
+    /// 用户名和密码会进行 URL 编码以处理特殊字符
     pub fn get_proxy_url(&self) -> Option<String> {
         if !self.enabled || self.host.is_empty() {
             return None;
         }
 
         let auth = match (&self.username, &self.password) {
-            (Some(user), Some(pass)) => format!("{}:{}@", user, pass),
-            (Some(user), None) => format!("{}@", user),
+            (Some(user), Some(pass)) => {
+                let encoded_user = utf8_percent_encode(user, NON_ALPHANUMERIC);
+                let encoded_pass = utf8_percent_encode(pass, NON_ALPHANUMERIC);
+                format!("{}:{}@", encoded_user, encoded_pass)
+            }
+            (Some(user), None) => {
+                let encoded_user = utf8_percent_encode(user, NON_ALPHANUMERIC);
+                format!("{}@", encoded_user)
+            }
             _ => String::new(),
         };
 
@@ -126,6 +137,7 @@ impl ProxyConfig {
 
 /// 应用全局配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AppConfig {
     /// 网页小程序列表
     #[serde(default)]
@@ -166,6 +178,7 @@ impl Default for AppConfig {
 
 /// 窗口状态信息
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WindowState {
     pub webapp_id: String,
     pub is_visible: bool,

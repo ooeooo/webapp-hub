@@ -42,7 +42,16 @@
     "resources": [],
     "category": "Utility",
     "shortDescription": "轻量级跨平台网页小程序容器",
-    "longDescription": "WebApp Hub 是一个轻量级、跨平台的网页小程序容器应用，支持将任意网页嵌入为独立窗口运行的小程序。"
+    "longDescription": "WebApp Hub 是一个轻量级、跨平台的网页小程序容器应用，支持将任意网页嵌入为独立窗口运行的小程序。",
+    "macOS": {
+      "entitlements": null,
+      "exceptionDomain": null,
+      "frameworks": [],
+      "minimumSystemVersion": "10.13",
+      "signingIdentity": null,
+      "providerShortName": null,
+      "hardenedRuntime": true
+    }
   },
   "plugins": {
     "global-shortcut": {

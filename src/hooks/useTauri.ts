@@ -33,13 +33,17 @@ export function useWindowControls() {
 
   const toggleMaximize = useCallback(async () => {
     const window = getCurrentWindow();
-    if (isMaximized) {
+    // 获取当前实际状态而不是依赖闭包中的值
+    const currentlyMaximized = await window.isMaximized();
+    if (currentlyMaximized) {
       await window.unmaximize();
     } else {
       await window.maximize();
     }
-    setIsMaximized(!isMaximized);
-  }, [isMaximized]);
+    // 从系统重新获取状态确保同步
+    const newState = await window.isMaximized();
+    setIsMaximized(newState);
+  }, []);
 
   const close = useCallback(async () => {
     await getCurrentWindow().close();

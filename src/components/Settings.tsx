@@ -274,8 +274,41 @@ function WindowSettings() {
 }
 
 function ShortcutSettings() {
-  const { config } = useAppStore();
-  const { isRecording, startRecording } = useShortcutRecorder();
+  const { config, saveConfig, addToast } = useAppStore();
+  const { isRecording, shortcut, startRecording, clearShortcut } = useShortcutRecorder();
+  const [isSaving, setIsSaving] = useState(false);
+
+  // 当录制完成时自动保存主窗口快捷键
+  useEffect(() => {
+    if (shortcut && !isRecording) {
+      setIsSaving(true);
+      saveConfig({ mainWindowShortcut: shortcut })
+        .then(() => {
+          clearShortcut();
+        })
+        .catch((err) => {
+          console.error('Failed to save main window shortcut:', err);
+        })
+        .finally(() => {
+          setIsSaving(false);
+        });
+    }
+  }, [shortcut, isRecording, saveConfig, clearShortcut]);
+
+  const handleClearShortcut = async () => {
+    setIsSaving(true);
+    try {
+      await saveConfig({ mainWindowShortcut: undefined });
+      addToast({
+        type: 'success',
+        title: '快捷键已清除',
+      });
+    } catch (err) {
+      console.error('Failed to clear shortcut:', err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
     <div className="max-w-2xl">
@@ -298,13 +331,33 @@ function ShortcutSettings() {
             </div>
             <div className="flex gap-2">
               <Input
-                value={config.mainWindowShortcut ? formatShortcut(config.mainWindowShortcut) : '未设置'}
+                value={
+                  isRecording
+                    ? '请按下快捷键...'
+                    : config.mainWindowShortcut
+                    ? formatShortcut(config.mainWindowShortcut)
+                    : '未设置'
+                }
                 readOnly
-                className="w-40 text-center"
+                className={cn('w-40 text-center', isRecording && 'ring-2 ring-hub-accent')}
               />
-              <Button variant="outline" onClick={startRecording}>
-                {isRecording ? '录制中...' : '修改'}
+              <Button
+                variant={isRecording ? 'primary' : 'outline'}
+                onClick={startRecording}
+                disabled={isSaving}
+              >
+                {isSaving ? '保存中...' : isRecording ? '录制中...' : '修改'}
               </Button>
+              {config.mainWindowShortcut && !isRecording && (
+                <Button
+                  variant="ghost"
+                  onClick={handleClearShortcut}
+                  disabled={isSaving}
+                  title="清除快捷键"
+                >
+                  清除
+                </Button>
+              )}
             </div>
           </div>
         </div>

@@ -242,6 +242,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // 重排序小程序
   reorderWebApps: async (webapps) => {
+    // 保存旧状态用于回滚
+    const oldWebapps = get().config.webapps;
+
+    // 乐观更新 UI
     set((state) => ({
       config: {
         ...state.config,
@@ -249,16 +253,30 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
     }));
 
-    // 更新每个小程序的order
-    for (let i = 0; i < webapps.length; i++) {
-      try {
-        await invoke('update_webapp', {
-          id: webapps[i].id,
-          order: i,
-        });
-      } catch (err) {
-        console.error('Failed to update order:', err);
-      }
+    // 并行更新所有小程序的 order
+    try {
+      await Promise.all(
+        webapps.map((webapp, i) =>
+          invoke('update_webapp', {
+            id: webapp.id,
+            order: i,
+          })
+        )
+      );
+    } catch (err) {
+      // 失败时回滚到旧状态
+      console.error('Failed to update order:', err);
+      set((state) => ({
+        config: {
+          ...state.config,
+          webapps: oldWebapps,
+        },
+      }));
+      get().addToast({
+        type: 'error',
+        title: '排序失败',
+        description: err instanceof Error ? err.message : String(err),
+      });
     }
   },
 

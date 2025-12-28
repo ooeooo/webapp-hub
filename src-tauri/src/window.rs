@@ -1,7 +1,8 @@
 use lru::LruCache;
 use parking_lot::Mutex;
 use std::num::NonZeroUsize;
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, Listener};
+use std::sync::Arc;
+use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 use crate::models::WebApp;
 
@@ -90,25 +91,26 @@ impl WindowManager {
         // 如果需要在页面加载时注入脚本
         if webapp.inject_on_load {
             if let Some(script) = &webapp.inject_script {
-                let script = script.clone();
-                window.listen("tauri://webview-created", move |_event| {
-                    // 脚本将在 webview 创建后注入
-                    log::info!("Webview created, script will be injected on load");
-                });
-                
-                // 使用 on_page_load 在页面加载完成后注入脚本
-                let script_clone = script.clone();
+                let script = Arc::new(script.clone());
                 let window_clone = window.clone();
-                window.once("tauri://created", move |_| {
-                    // 延迟注入以确保页面已加载
-                    std::thread::spawn(move || {
-                        std::thread::sleep(std::time::Duration::from_millis(500));
-                        if let Err(e) = window_clone.eval(&script_clone) {
-                            log::error!("Failed to inject script on load: {}", e);
-                        } else {
-                            log::info!("Script injected on page load");
+                let webapp_id = webapp.id.clone();
+
+                // 使用 tokio::spawn 进行异步延迟注入，避免阻塞
+                // 注意：实际的页面加载事件在 Tauri 2 中需要通过 webview 事件处理
+                tokio::spawn(async move {
+                    // 等待页面初始加载完成
+                    tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+                    
+                    // 检查窗口是否仍然存在
+                    match window_clone.eval(&*script) {
+                        Ok(_) => {
+                            log::info!("Script injected on page load for webapp: {}", webapp_id);
                         }
-                    });
+                        Err(e) => {
+                            // 窗口可能已关闭，这不是致命错误
+                            log::debug!("Could not inject script (window may be closed): {}", e);
+                        }
+                    }
                 });
             }
         }

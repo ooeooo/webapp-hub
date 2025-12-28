@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { cn, formatShortcut, getFaviconUrl, truncate } from '@/lib/utils';
 import { useAppStore } from '@/stores/appStore';
 import { Dialog, DialogContent } from '@/components/ui/Dialog';
@@ -152,12 +152,12 @@ function EditWebAppDialog({ webapp, open, onOpenChange }: EditWebAppDialogProps)
   const [injectOnLoad, setInjectOnLoad] = useState(webapp.injectOnLoad);
   const [injectOnShortcut, setInjectOnShortcut] = useState(webapp.injectOnShortcut);
 
-  // Initialize shortcut from webapp
-  useState(() => {
-    if (webapp.shortcut) {
+  // Initialize shortcut from webapp when dialog opens
+  useEffect(() => {
+    if (open && webapp.shortcut) {
       setShortcut(webapp.shortcut);
     }
-  });
+  }, [open, webapp.shortcut, setShortcut]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
