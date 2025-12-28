@@ -56,8 +56,7 @@
   "plugins": {
     "global-shortcut": {
       "all": true
-    },
-    "store": {}
+    }
   }
 }
 

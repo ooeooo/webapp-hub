@@ -3,8 +3,9 @@ use std::collections::HashMap;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
+use crate::config::ConfigManager;
 use crate::models::AppConfig;
-use crate::window::WindowManager;
+use crate::window::{ToggleResult, WindowManager};
 
 /// 快捷键管理器状态
 pub struct ShortcutManager {
@@ -142,37 +143,32 @@ fn handle_shortcut_trigger(app: &AppHandle, webapp_id: &str) {
         return;
     }
 
-    // 从配置中获取webapp信息
-    let store_path = app
-        .path()
-        .app_data_dir()
-        .unwrap_or_default()
-        .join("config.json");
+    // 从 ConfigManager 获取配置（避免同步文件 I/O）
+    if let Some(config_manager) = app.try_state::<ConfigManager>() {
+        let config = config_manager.read();
+        
+        if let Some(webapp) = config.webapps.iter().find(|w| w.id == webapp_id) {
+            if let Some(window_manager) = app.try_state::<WindowManager>() {
+                let proxy_url = if webapp.use_proxy && config.proxy.enabled {
+                    config.proxy.get_proxy_url()
+                } else {
+                    None
+                };
 
-    if let Ok(content) = std::fs::read_to_string(&store_path) {
-        if let Ok(config) = serde_json::from_str::<AppConfig>(&content) {
-            if let Some(webapp) = config.webapps.iter().find(|w| w.id == webapp_id) {
-                if let Some(window_manager) = app.try_state::<WindowManager>() {
-                    let proxy_url = if webapp.use_proxy && config.proxy.enabled {
-                        config.proxy.get_proxy_url()
-                    } else {
-                        None
-                    };
-
-                    match window_manager.toggle_webapp(app, webapp, proxy_url) {
-                        Ok(should_show) => {
-                            // 仅当显示窗口时才可能注入脚本
-                            if should_show && webapp.inject_on_shortcut {
-                                if let Some(script) = &webapp.inject_script {
-                                    if let Err(e) = window_manager.inject_script(app, &webapp.id, script) {
-                                        log::error!("Failed to inject script on shortcut: {}", e);
-                                    }
+                match window_manager.toggle_webapp(app, webapp, proxy_url) {
+                    Ok(result) => {
+                        // 仅当显示已存在的窗口时才注入快捷键脚本
+                        // CreatedNew 情况已由 open_webapp 中的 inject_on_load 处理
+                        if result == ToggleResult::ShownExisting && webapp.inject_on_shortcut {
+                            if let Some(script) = &webapp.inject_script {
+                                if let Err(e) = window_manager.inject_script(app, &webapp.id, script) {
+                                    log::error!("Failed to inject script on shortcut: {}", e);
                                 }
                             }
                         }
-                        Err(e) => {
-                            log::error!("Failed to toggle webapp: {}", e);
-                        }
+                    }
+                    Err(e) => {
+                        log::error!("Failed to toggle webapp: {}", e);
                     }
                 }
             }

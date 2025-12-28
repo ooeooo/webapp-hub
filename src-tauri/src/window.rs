@@ -6,6 +6,45 @@ use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 use crate::models::WebApp;
 
+/// 包装用户脚本，确保在页面就绪后执行
+fn wrap_script_with_ready_check(script: &str) -> String {
+    // 转义用户脚本中的反斜杠和反引号
+    let escaped_script = script
+        .replace('\\', "\\\\")
+        .replace('`', "\\`")
+        .replace("${", "\\${");
+    
+    format!(
+        r#"(function() {{
+    var userScript = `{}`;
+    function executeScript() {{
+        try {{
+            eval(userScript);
+        }} catch (e) {{
+            console.error('[WebApp Hub] Script execution error:', e);
+        }}
+    }}
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {{
+        executeScript();
+    }} else {{
+        document.addEventListener('DOMContentLoaded', executeScript);
+    }}
+}})();"#,
+        escaped_script
+    )
+}
+
+/// 窗口切换结果
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToggleResult {
+    /// 隐藏了窗口
+    Hidden,
+    /// 显示了已存在的窗口（需要检查快捷键脚本注入）
+    ShownExisting,
+    /// 创建了新窗口（inject_on_load 已处理，不需要快捷键脚本注入）
+    CreatedNew,
+}
+
 /// 窗口管理器 - 管理小程序窗口的生命周期
 pub struct WindowManager {
     /// LRU缓存，用于跟踪活跃窗口
@@ -78,9 +117,10 @@ impl WindowManager {
         .resizable(true)
         .center();
 
-        // 如果有代理配置，设置代理
+        // 如果有代理配置，临时设置代理环境变量
+        // 注意：这里使用临时设置+清除的方式，避免影响其他窗口
+        let had_proxy = proxy_url.is_some();
         if let Some(proxy) = proxy_url {
-            // 通过环境变量设置代理 (WebView会读取)
             std::env::set_var("HTTP_PROXY", &proxy);
             std::env::set_var("HTTPS_PROXY", &proxy);
             log::info!("Setting proxy for webapp {}: {}", webapp.id, proxy);
@@ -88,27 +128,40 @@ impl WindowManager {
 
         let window = builder.build().map_err(|e| e.to_string())?;
 
+        // 立即清除代理环境变量，避免影响后续创建的窗口
+        if had_proxy {
+            std::env::remove_var("HTTP_PROXY");
+            std::env::remove_var("HTTPS_PROXY");
+        }
+
         // 如果需要在页面加载时注入脚本
         if webapp.inject_on_load {
             if let Some(script) = &webapp.inject_script {
-                let script = Arc::new(script.clone());
+                // 包装用户脚本，确保在页面就绪后执行
+                let wrapped_script = wrap_script_with_ready_check(script);
+                let wrapped_script = Arc::new(wrapped_script);
                 let window_clone = window.clone();
                 let webapp_id = webapp.id.clone();
 
-                // 使用 tokio::spawn 进行异步延迟注入，避免阻塞
-                // 注意：实际的页面加载事件在 Tauri 2 中需要通过 webview 事件处理
+                // 使用 tokio::spawn 进行异步延迟注入
                 tokio::spawn(async move {
-                    // 等待页面初始加载完成
-                    tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+                    // 等待初始加载
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                     
-                    // 检查窗口是否仍然存在
-                    match window_clone.eval(&*script) {
+                    match window_clone.eval(&*wrapped_script) {
                         Ok(_) => {
-                            log::info!("Script injected on page load for webapp: {}", webapp_id);
+                            log::info!(
+                                "Script injected on page load for webapp: {}",
+                                webapp_id
+                            );
                         }
                         Err(e) => {
-                            // 窗口可能已关闭，这不是致命错误
-                            log::debug!("Could not inject script (window may be closed): {}", e);
+                            // 窗口可能已关闭
+                            log::debug!(
+                                "Could not inject script for webapp {}: {}",
+                                webapp_id,
+                                e
+                            );
                         }
                     }
                 });
@@ -145,8 +198,11 @@ impl WindowManager {
     }
 
     /// 切换窗口可见性
-    /// 返回值: Ok(true) 表示显示窗口（可能需要注入脚本），Ok(false) 表示隐藏窗口
-    pub fn toggle_webapp(&self, app: &AppHandle, webapp: &WebApp, proxy_url: Option<String>) -> Result<bool, String> {
+    /// 返回 ToggleResult 以区分不同情况：
+    /// - Hidden: 隐藏了窗口
+    /// - ShownExisting: 显示了已存在的窗口（需要检查快捷键脚本注入）
+    /// - CreatedNew: 创建了新窗口（inject_on_load 已处理）
+    pub fn toggle_webapp(&self, app: &AppHandle, webapp: &WebApp, proxy_url: Option<String>) -> Result<ToggleResult, String> {
         let window_label = format!("webapp-{}", webapp.id);
 
         if let Some(window) = app.get_webview_window(&window_label) {
@@ -157,7 +213,7 @@ impl WindowManager {
                 // 情况1: 窗口可见且有焦点 → 隐藏窗口
                 window.hide().map_err(|e| e.to_string())?;
                 log::info!("Hidden webapp window: {} (visible && focused)", webapp.id);
-                Ok(false) // 返回 false 表示隐藏
+                Ok(ToggleResult::Hidden)
             } else {
                 // 情况2: 窗口不可见或无焦点 → 显示窗口并置焦点
                 window.show().map_err(|e| e.to_string())?;
@@ -168,20 +224,22 @@ impl WindowManager {
                 cache.get(&webapp.id);
                 
                 log::info!("Shown webapp window: {} (not visible or not focused)", webapp.id);
-                Ok(true) // 返回 true 表示显示（可能需要注入脚本）
+                Ok(ToggleResult::ShownExisting)
             }
         } else {
-            // 窗口不存在，创建新窗口
+            // 窗口不存在，创建新窗口（inject_on_load 在 open_webapp 中处理）
             self.open_webapp(app, webapp, proxy_url)?;
-            Ok(true) // 新窗口创建，返回 true
+            Ok(ToggleResult::CreatedNew)
         }
     }
 
     /// 注入 JavaScript 脚本到指定的小程序窗口
+    /// 脚本会被包装以确保在页面就绪后执行
     pub fn inject_script(&self, app: &AppHandle, webapp_id: &str, script: &str) -> Result<(), String> {
         let window_label = format!("webapp-{}", webapp_id);
         if let Some(window) = app.get_webview_window(&window_label) {
-            window.eval(script).map_err(|e| e.to_string())?;
+            let wrapped_script = wrap_script_with_ready_check(script);
+            window.eval(&wrapped_script).map_err(|e| e.to_string())?;
             log::info!("Injected script to webapp: {}", webapp_id);
         } else {
             log::warn!("Window not found for script injection: {}", webapp_id);

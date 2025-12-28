@@ -1,9 +1,11 @@
 mod commands;
+mod config;
 mod models;
 mod proxy;
 mod shortcuts;
 mod window;
 
+use config::ConfigManager;
 use tauri::Manager;
 use window::WindowManager;
 
@@ -54,8 +56,18 @@ pub fn run() {
 
     builder
         .setup(|app| {
-            // 初始化窗口管理器
-            let window_manager = WindowManager::new(5); // 默认最大5个活跃窗口
+            // 初始化配置管理器
+            let config_path = app
+                .path()
+                .app_data_dir()
+                .unwrap_or_default()
+                .join("config.json");
+            let config_manager = ConfigManager::new(config_path);
+            let config = config_manager.read();
+            app.manage(config_manager);
+
+            // 初始化窗口管理器，使用配置中的最大窗口数
+            let window_manager = WindowManager::new(config.max_active_windows);
             app.manage(window_manager);
 
             // 初始化快捷键管理（如果失败只记录日志，不阻止启动）

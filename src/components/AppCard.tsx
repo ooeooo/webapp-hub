@@ -118,8 +118,13 @@ export function AppCard({ webapp }: AppCardProps) {
             <Button
               variant="danger"
               onClick={async () => {
-                await deleteWebApp(webapp.id);
-                setIsDeleting(false);
+                try {
+                  await deleteWebApp(webapp.id);
+                  setIsDeleting(false);
+                } catch (err) {
+                  // deleteWebApp 内部已显示 toast，这里保持对话框打开
+                  console.error('Delete failed:', err);
+                }
               }}
             >
               删除
@@ -152,12 +157,24 @@ function EditWebAppDialog({ webapp, open, onOpenChange }: EditWebAppDialogProps)
   const [injectOnLoad, setInjectOnLoad] = useState(webapp.injectOnLoad);
   const [injectOnShortcut, setInjectOnShortcut] = useState(webapp.injectOnShortcut);
 
-  // Initialize shortcut from webapp when dialog opens
+  // 在对话框打开时重置所有状态到原始值
   useEffect(() => {
-    if (open && webapp.shortcut) {
-      setShortcut(webapp.shortcut);
+    if (open) {
+      setName(webapp.name);
+      setUrl(webapp.url);
+      setWidth(webapp.width.toString());
+      setHeight(webapp.height.toString());
+      setInjectScript(webapp.injectScript || '');
+      setInjectOnLoad(webapp.injectOnLoad);
+      setInjectOnShortcut(webapp.injectOnShortcut);
+      setShowScriptSection(!!webapp.injectScript);
+      if (webapp.shortcut) {
+        setShortcut(webapp.shortcut);
+      } else {
+        setShortcut('');
+      }
     }
-  }, [open, webapp.shortcut, setShortcut]);
+  }, [open, webapp, setShortcut]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

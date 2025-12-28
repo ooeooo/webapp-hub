@@ -1,61 +1,29 @@
-use std::path::PathBuf;
 use tauri::{AppHandle, Manager, State};
 
+use crate::config::ConfigManager;
 use crate::models::{AppConfig, ProxyConfig, WebApp};
 use crate::proxy::ProxyManager;
 use crate::shortcuts::{load_shortcuts_from_config, ShortcutManager};
 use crate::window::WindowManager;
 
-/// 获取配置文件路径
-fn get_config_path(app: &AppHandle) -> PathBuf {
-    app.path()
-        .app_data_dir()
-        .unwrap_or_default()
-        .join("config.json")
-}
-
-/// 读取配置
-fn read_config(app: &AppHandle) -> AppConfig {
-    let path = get_config_path(app);
-    if path.exists() {
-        std::fs::read_to_string(&path)
-            .ok()
-            .and_then(|content| serde_json::from_str(&content).ok())
-            .unwrap_or_default()
-    } else {
-        AppConfig::default()
-    }
-}
-
-/// 写入配置
-fn write_config(app: &AppHandle, config: &AppConfig) -> Result<(), String> {
-    let path = get_config_path(app);
-
-    // 确保目录存在
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-
-    let content = serde_json::to_string_pretty(config).map_err(|e| e.to_string())?;
-    std::fs::write(&path, content).map_err(|e| e.to_string())?;
-
-    Ok(())
-}
-
 /// 获取应用配置
 #[tauri::command]
-pub async fn get_config(app: AppHandle) -> Result<AppConfig, String> {
-    Ok(read_config(&app))
+pub async fn get_config(config_manager: State<'_, ConfigManager>) -> Result<AppConfig, String> {
+    Ok(config_manager.read())
 }
 
 /// 保存应用配置
 #[tauri::command]
-pub async fn save_config(app: AppHandle, config: AppConfig) -> Result<(), String> {
+pub async fn save_config(
+    app: AppHandle,
+    config_manager: State<'_, ConfigManager>,
+    config: AppConfig,
+) -> Result<(), String> {
     // 验证代理配置
     ProxyManager::validate_config(&config.proxy)?;
 
     // 保存配置
-    write_config(&app, &config)?;
+    config_manager.replace(config.clone())?;
 
     // 应用代理设置
     ProxyManager::apply_proxy(&config.proxy);
@@ -76,6 +44,7 @@ pub async fn save_config(app: AppHandle, config: AppConfig) -> Result<(), String
 #[tauri::command]
 pub async fn add_webapp(
     app: AppHandle,
+    config_manager: State<'_, ConfigManager>,
     name: String,
     url: String,
     icon: Option<String>,
@@ -86,40 +55,41 @@ pub async fn add_webapp(
     inject_on_load: Option<bool>,
     inject_on_shortcut: Option<bool>,
 ) -> Result<WebApp, String> {
-    let mut config = read_config(&app);
-
     // 创建新的webapp
     let mut webapp = WebApp::new(name, url);
     webapp.icon = icon;
     webapp.shortcut = shortcut.clone();
     webapp.width = width.unwrap_or(1024);
     webapp.height = height.unwrap_or(768);
-    webapp.order = config.webapps.len() as u32;
     webapp.inject_script = inject_script;
     webapp.inject_on_load = inject_on_load.unwrap_or(false);
     webapp.inject_on_shortcut = inject_on_shortcut.unwrap_or(false);
 
-    // 添加到配置
-    config.webapps.push(webapp.clone());
-    write_config(&app, &config)?;
+    // 使用 ConfigManager 原子更新配置，并获取正确的 order 值
+    let final_webapp = config_manager.update(|config| {
+        webapp.order = config.webapps.len() as u32;
+        config.webapps.push(webapp.clone());
+        webapp.clone()
+    })?;
 
     // 注册快捷键
     if let Some(shortcut_str) = &shortcut {
         if !shortcut_str.is_empty() {
             if let Some(manager) = app.try_state::<ShortcutManager>() {
-                let _ = manager.register(&app, shortcut_str, &webapp.id);
+                let _ = manager.register(&app, shortcut_str, &final_webapp.id);
             }
         }
     }
 
-    log::info!("Added webapp: {} ({})", webapp.name, webapp.id);
-    Ok(webapp)
+    log::info!("Added webapp: {} ({})", final_webapp.name, final_webapp.id);
+    Ok(final_webapp)
 }
 
 /// 更新网页小程序
 #[tauri::command]
 pub async fn update_webapp(
     app: AppHandle,
+    config_manager: State<'_, ConfigManager>,
     id: String,
     name: Option<String>,
     url: Option<String>,
@@ -133,53 +103,52 @@ pub async fn update_webapp(
     inject_on_load: Option<bool>,
     inject_on_shortcut: Option<bool>,
 ) -> Result<WebApp, String> {
-    let mut config = read_config(&app);
+    // 使用 ConfigManager 原子更新配置
+    let (old_shortcut, updated_webapp) = config_manager.update(|config| {
+        if let Some(webapp) = config.webapps.iter_mut().find(|w| w.id == id) {
+            let old_shortcut = webapp.shortcut.clone();
 
-    // 查找并更新webapp
-    let webapp = config
-        .webapps
-        .iter_mut()
-        .find(|w| w.id == id)
-        .ok_or("小程序不存在")?;
+            if let Some(n) = name.clone() {
+                webapp.name = n;
+            }
+            if let Some(u) = url.clone() {
+                webapp.url = u;
+            }
+            if icon.is_some() {
+                webapp.icon = icon.clone();
+            }
+            if let Some(s) = shortcut.clone() {
+                webapp.shortcut = if s.is_empty() { None } else { Some(s) };
+            }
+            if let Some(w) = width {
+                webapp.width = w;
+            }
+            if let Some(h) = height {
+                webapp.height = h;
+            }
+            if let Some(p) = use_proxy {
+                webapp.use_proxy = p;
+            }
+            if let Some(o) = order {
+                webapp.order = o;
+            }
+            if let Some(script) = inject_script.clone() {
+                webapp.inject_script = if script.is_empty() { None } else { Some(script) };
+            }
+            if let Some(on_load) = inject_on_load {
+                webapp.inject_on_load = on_load;
+            }
+            if let Some(on_shortcut) = inject_on_shortcut {
+                webapp.inject_on_shortcut = on_shortcut;
+            }
 
-    let old_shortcut = webapp.shortcut.clone();
+            (old_shortcut, Some(webapp.clone()))
+        } else {
+            (None, None)
+        }
+    })?;
 
-    if let Some(n) = name {
-        webapp.name = n;
-    }
-    if let Some(u) = url {
-        webapp.url = u;
-    }
-    if icon.is_some() {
-        webapp.icon = icon;
-    }
-    if let Some(s) = shortcut.clone() {
-        webapp.shortcut = if s.is_empty() { None } else { Some(s) };
-    }
-    if let Some(w) = width {
-        webapp.width = w;
-    }
-    if let Some(h) = height {
-        webapp.height = h;
-    }
-    if let Some(p) = use_proxy {
-        webapp.use_proxy = p;
-    }
-    if let Some(o) = order {
-        webapp.order = o;
-    }
-    if let Some(script) = inject_script {
-        webapp.inject_script = if script.is_empty() { None } else { Some(script) };
-    }
-    if let Some(on_load) = inject_on_load {
-        webapp.inject_on_load = on_load;
-    }
-    if let Some(on_shortcut) = inject_on_shortcut {
-        webapp.inject_on_shortcut = on_shortcut;
-    }
-
-    let updated_webapp = webapp.clone();
-    write_config(&app, &config)?;
+    let updated_webapp = updated_webapp.ok_or("小程序不存在")?;
 
     // 更新快捷键
     if let Some(manager) = app.try_state::<ShortcutManager>() {
@@ -201,18 +170,20 @@ pub async fn update_webapp(
 
 /// 删除网页小程序
 #[tauri::command]
-pub async fn delete_webapp(app: AppHandle, id: String) -> Result<(), String> {
-    let mut config = read_config(&app);
-
-    // 查找webapp
-    let webapp = config.webapps.iter().find(|w| w.id == id).cloned();
-
-    // 删除
-    config.webapps.retain(|w| w.id != id);
-    write_config(&app, &config)?;
+pub async fn delete_webapp(
+    app: AppHandle,
+    config_manager: State<'_, ConfigManager>,
+    id: String,
+) -> Result<(), String> {
+    // 使用 ConfigManager 原子更新配置
+    let deleted_webapp = config_manager.update(|config| {
+        let webapp = config.webapps.iter().find(|w| w.id == id).cloned();
+        config.webapps.retain(|w| w.id != id);
+        webapp
+    })?;
 
     // 注销快捷键
-    if let Some(w) = webapp {
+    if let Some(w) = deleted_webapp {
         if let Some(shortcut) = &w.shortcut {
             if let Some(manager) = app.try_state::<ShortcutManager>() {
                 let _ = manager.unregister(&app, shortcut);
@@ -234,16 +205,18 @@ pub async fn delete_webapp(app: AppHandle, id: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn open_webapp(
     app: AppHandle,
+    config_manager: State<'_, ConfigManager>,
     window_manager: State<'_, WindowManager>,
     id: String,
 ) -> Result<(), String> {
-    let config = read_config(&app);
+    let config = config_manager.read();
 
     let webapp = config
         .webapps
         .iter()
         .find(|w| w.id == id)
-        .ok_or("小程序不存在")?;
+        .ok_or("小程序不存在")?
+        .clone();
 
     let proxy_url = if webapp.use_proxy && config.proxy.enabled {
         config.proxy.get_proxy_url()
@@ -251,7 +224,7 @@ pub async fn open_webapp(
         None
     };
 
-    window_manager.open_webapp(&app, webapp, proxy_url)
+    window_manager.open_webapp(&app, &webapp, proxy_url)
 }
 
 /// 关闭小程序窗口
@@ -267,7 +240,7 @@ pub async fn close_webapp(
 /// 设置最大活跃窗口数量
 #[tauri::command]
 pub async fn set_max_active_windows(
-    app: AppHandle,
+    config_manager: State<'_, ConfigManager>,
     window_manager: State<'_, WindowManager>,
     max: usize,
 ) -> Result<(), String> {
@@ -277,10 +250,11 @@ pub async fn set_max_active_windows(
 
     window_manager.set_max_windows(max);
 
-    // 更新配置
-    let mut config = read_config(&app);
-    config.max_active_windows = max;
-    write_config(&app, &config)?;
+    // 使用 ConfigManager 原子更新配置
+    config_manager.update(|config| {
+        config.max_active_windows = max;
+        () // 显式返回 unit
+    })?;
 
     log::info!("Set max active windows to: {}", max);
     Ok(())
@@ -288,14 +262,19 @@ pub async fn set_max_active_windows(
 
 /// 设置代理配置
 #[tauri::command]
-pub async fn set_proxy_config(app: AppHandle, proxy: ProxyConfig) -> Result<(), String> {
+pub async fn set_proxy_config(
+    config_manager: State<'_, ConfigManager>,
+    proxy: ProxyConfig,
+) -> Result<(), String> {
     // 验证配置
     ProxyManager::validate_config(&proxy)?;
 
-    // 更新配置
-    let mut config = read_config(&app);
-    config.proxy = proxy.clone();
-    write_config(&app, &config)?;
+    // 使用 ConfigManager 原子更新配置
+    let proxy_clone = proxy.clone();
+    config_manager.update(|config| {
+        config.proxy = proxy_clone;
+        () // 显式返回 unit
+    })?;
 
     // 应用代理
     ProxyManager::apply_proxy(&proxy);
