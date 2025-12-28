@@ -8,19 +8,61 @@ use tauri::Manager;
 use window::WindowManager;
 
 pub fn run() {
-    env_logger::init();
+    // 设置自定义 panic hook 以便在崩溃前记录信息
+    std::panic::set_hook(Box::new(|panic_info| {
+        let msg = if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
+            s.to_string()
+        } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "Unknown panic".to_string()
+        };
+        
+        let location = panic_info
+            .location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_else(|| "unknown location".to_string());
+        
+        eprintln!("PANIC at {}: {}", location, msg);
+        
+        // 在 macOS 上尝试显示对话框
+        #[cfg(target_os = "macos")]
+        {
+            let _ = std::process::Command::new("osascript")
+                .args([
+                    "-e",
+                    &format!(
+                        "display dialog \"WebApp Hub crashed:\\n{}\\n\\nLocation: {}\" buttons {{\"OK\"}} default button \"OK\" with icon stop",
+                        msg.replace("\"", "\\\""),
+                        location
+                    ),
+                ])
+                .output();
+        }
+    }));
 
-    tauri::Builder::default()
+    // 使用 try_init 避免重复初始化导致 panic
+    let _ = env_logger::try_init();
+
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_store::Builder::new().build())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_store::Builder::new().build());
+
+    // 全局快捷键插件在某些系统上可能失败（权限问题），需要优雅处理
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
+
+    builder
         .setup(|app| {
             // 初始化窗口管理器
             let window_manager = WindowManager::new(5); // 默认最大5个活跃窗口
             app.manage(window_manager);
 
-            // 初始化快捷键管理
-            shortcuts::setup_shortcuts(app)?;
+            // 初始化快捷键管理（如果失败只记录日志，不阻止启动）
+            if let Err(e) = shortcuts::setup_shortcuts(app) {
+                log::error!("Failed to setup shortcuts: {:?}", e);
+                // 仍然继续启动，只是快捷键功能不可用
+            }
 
             Ok(())
         })

@@ -3,10 +3,16 @@
 # GitHub Actions 构建状态检查脚本
 # 循环检查直到构建完成或失败
 
-RUN_ID=${1:-$(gh run list --limit 1 --json databaseId -q '.[0].databaseId')}
-INTERVAL=${2:-15}  # 检查间隔（秒）
+# 自动获取最新构建 ID
+RUN_ID=$(gh run list --limit 1 --json databaseId -q '.[0].databaseId')
+INTERVAL=${1:-15}  # 检查间隔（秒），可通过第一个参数自定义
 
-echo "🔍 监控 GitHub Actions 构建: $RUN_ID"
+if [ -z "$RUN_ID" ]; then
+    echo "❌ 无法获取最新构建 ID"
+    exit 1
+fi
+
+echo "🔍 监控 GitHub Actions 最新构建: $RUN_ID"
 echo "⏱️  检查间隔: ${INTERVAL}s"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
