@@ -10,18 +10,17 @@ import type { WebApp } from '@/types';
 
 interface AppCardProps {
   webapp: WebApp;
+  onOpen?: () => void;
 }
 
-export function AppCard({ webapp }: AppCardProps) {
-  const { openWebApp, deleteWebApp } = useAppStore();
+export function AppCard({ webapp, onOpen }: AppCardProps) {
+  const { deleteWebApp } = useAppStore();
   const [isEditing, setIsEditing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const handleOpen = async () => {
-    try {
-      await openWebApp(webapp.id);
-    } catch (e) {
-      console.error('Failed to open webapp:', e);
+  const handleOpen = () => {
+    if (onOpen) {
+      onOpen();
     }
   };
 

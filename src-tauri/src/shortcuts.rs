@@ -1,11 +1,9 @@
 use parking_lot::Mutex;
 use std::collections::HashMap;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
-use crate::config::ConfigManager;
 use crate::models::AppConfig;
-use crate::window::{ToggleResult, WindowManager};
 
 /// 快捷键管理器状态
 pub struct ShortcutManager {
@@ -125,55 +123,36 @@ pub fn setup_shortcuts(app: &tauri::App) -> Result<(), Box<dyn std::error::Error
 
 /// 处理快捷键触发
 fn handle_shortcut_trigger(app: &AppHandle, webapp_id: &str) {
+    // 获取主窗口
+    let main_window = match app.get_webview_window("main") {
+        Some(w) => w,
+        None => return,
+    };
+
+    let is_visible = main_window.is_visible().unwrap_or(false);
+    let is_focused = main_window.is_focused().unwrap_or(false);
+
     // 处理主窗口快捷键
     if webapp_id == "__main__" {
-        if let Some(window) = app.get_webview_window("main") {
-            let is_visible = window.is_visible().unwrap_or(false);
-            let is_focused = window.is_focused().unwrap_or(false);
-            
-            if is_visible && is_focused {
-                // 窗口可见且有焦点 → 隐藏
-                let _ = window.hide();
-            } else {
-                // 窗口不可见或无焦点 → 显示并置焦点
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+        if is_visible && is_focused {
+            let _ = main_window.hide();
+        } else {
+            let _ = main_window.show();
+            let _ = main_window.set_focus();
         }
         return;
     }
 
-    // 从 ConfigManager 获取配置（避免同步文件 I/O）
-    if let Some(config_manager) = app.try_state::<ConfigManager>() {
-        let config = config_manager.read();
-        
-        if let Some(webapp) = config.webapps.iter().find(|w| w.id == webapp_id) {
-            if let Some(window_manager) = app.try_state::<WindowManager>() {
-                let proxy_url = if webapp.use_proxy && config.proxy.enabled {
-                    config.proxy.get_proxy_url()
-                } else {
-                    None
-                };
-
-                match window_manager.toggle_webapp(app, webapp, proxy_url) {
-                    Ok(result) => {
-                        // 仅当显示已存在的窗口时才注入快捷键脚本
-                        // CreatedNew 情况已由 open_webapp 中的 inject_on_load 处理
-                        if result == ToggleResult::ShownExisting && webapp.inject_on_shortcut {
-                            if let Some(script) = &webapp.inject_script {
-                                if let Err(e) = window_manager.inject_script(app, &webapp.id, script) {
-                                    log::error!("Failed to inject script on shortcut: {}", e);
-                                }
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        log::error!("Failed to toggle webapp: {}", e);
-                    }
-                }
-            }
-        }
+    // 小程序快捷键：显示主窗口并切换到对应的小程序 tab
+    if !is_visible || !is_focused {
+        let _ = main_window.show();
+        let _ = main_window.set_focus();
     }
+
+    // 发送事件到前端，通知切换到对应的小程序
+    let _ = main_window.emit("switch-webapp", webapp_id);
+    
+    log::info!("Shortcut triggered for webapp: {}", webapp_id);
 }
 
 /// 从配置中加载并注册所有快捷键

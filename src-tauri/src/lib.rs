@@ -78,6 +78,17 @@ pub fn run() {
 
             Ok(())
         })
+        .on_window_event(|window, event| {
+            // 处理窗口关闭事件，清理资源
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                if window.label() == "main" {
+                    // 主窗口关闭时，清理所有快捷键
+                    if let Some(manager) = window.app_handle().try_state::<shortcuts::ShortcutManager>() {
+                        let _ = manager.clear_all(window.app_handle());
+                    }
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             commands::get_config,
             commands::save_config,
